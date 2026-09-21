@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#000000"/>
+  <rect x="4" y="4" width="56" height="56" fill="#111111" stroke="#202020" stroke-width="2"/>
+  <path d="M13 16h28v6H19v7h20v6H19v7h22v6H13z" fill="#eeeeee"/>
+  <path d="M45 16h6L39 48h-6z" fill="#da5c2c"/>
+  <text x="32" y="57" text-anchor="middle" fill="#eeeeee" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="7" font-weight="700">HEULA</text>
+</svg>
