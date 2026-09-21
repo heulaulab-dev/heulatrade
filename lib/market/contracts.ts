@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const SymbolSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9]{1,12}$/)
-export const FreshnessSchema = z.enum(['LIVE', 'DELAYED', 'EOD', 'STALE', 'UNAVAILABLE'])
+export const FreshnessSchema = z.enum(['LIVE', 'DELAYED', 'EOD', 'SNAPSHOT', 'HISTORICAL', 'STALE', 'UNAVAILABLE'])
 export const MetaSchema = z.object({
   source: z.string(),
   fetchedAt: z.string().datetime(),
@@ -28,6 +28,7 @@ export const QuoteSchema = z.object({
   previousClose: z.number().finite().nullable(), change: z.number().finite().nullable(),
   changePercent: z.number().finite().nullable(), volume: z.number().finite().nullable(),
   value: z.number().finite().nullable(), frequency: z.number().finite().nullable(),
+  foreignBuy: z.number().finite().nullable(), foreignSell: z.number().finite().nullable(),
 })
 export type Quote = z.infer<typeof QuoteSchema>
 
@@ -55,6 +56,62 @@ export const FundamentalsSchema = z.array(z.object({ periodDate: z.string().null
 export const ProfileSchema = z.object({ symbol: SymbolSchema, companyName: z.string().nullable(), website: z.string().nullable(), description: z.string().nullable(), directors: z.array(z.record(z.unknown())), commissioners: z.array(z.record(z.unknown())), shareholders: z.array(z.record(z.unknown())), subsidiaries: z.array(z.record(z.unknown())) })
 export const ActionSchema = z.array(z.object({ date: z.string().nullable(), type: z.string().nullable(), description: z.string().nullable(), documentUrl: z.string().nullable() }))
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// NEWS & ANNOUNCEMENTS SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const NewsItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  publishDate: z.string(),
+  source: z.string().optional(),
+  url: z.string().optional(),
+})
+export type NewsItem = z.infer<typeof NewsItemSchema>
+
+export const AnnouncementItemSchema = z.object({
+  id: z.string(),
+  announcementNo: z.string().optional(),
+  title: z.string(),
+  publishDate: z.string(),
+  code: z.string().optional(),
+  type: z.string().optional(),
+  attachments: z.array(z.object({
+    filename: z.string(),
+    url: z.string(),
+    originalFilename: z.string().optional(),
+  })).optional(),
+})
+export type AnnouncementItem = z.infer<typeof AnnouncementItemSchema>
+
+export const NewsResponseSchema = z.object({
+  data: z.array(NewsItemSchema),
+  meta: z.object({
+    source: z.string(),
+    fetchedAt: z.string().datetime(),
+    dataAsOf: z.string().nullable(),
+    freshness: FreshnessSchema,
+    page: z.number(),
+    totalPages: z.number(),
+  }),
+})
+
+export const AnnouncementResponseSchema = z.object({
+  data: z.array(AnnouncementItemSchema),
+  meta: z.object({
+    source: z.string(),
+    fetchedAt: z.string().datetime(),
+    dataAsOf: z.string().nullable(),
+    freshness: FreshnessSchema,
+    page: z.number(),
+    totalPages: z.number(),
+  }),
+})
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCREENER SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export const ScreenFieldSchema = z.enum(['price', 'volume', 'value', 'frequency', 'foreignNetShares', 'marketCap', 'per', 'pbv', 'roe', 'roa', 'eps', 'der', 'dividendYield', 'change1D'])
 export const ScreenConditionSchema = z.object({
   field: ScreenFieldSchema,
@@ -66,6 +123,30 @@ export const ScreenRequestSchema = z.object({ conditions: z.array(ScreenConditio
 export type ScreenCondition = z.infer<typeof ScreenConditionSchema>
 export const ScreenRowSchema = z.object({ symbol: SymbolSchema, name: z.string().nullable() }).catchall(z.number().finite().nullable())
 export const ScreenResponseSchema = z.object({ data: z.object({ rows: z.array(ScreenRowSchema), total: z.number().int().nonnegative(), supportedFields: z.array(ScreenFieldSchema) }), meta: MetaSchema })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// HISTORICAL DATA SCHEMAS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const HistoricalDataStatusSchema = z.object({
+  dataset: z.enum(['stock_summary', 'broker_summary', 'index_summary']),
+  availableDates: z.array(z.string()),
+  latestDate: z.string().nullable(),
+  totalPartitions: z.number(),
+  totalSizeBytes: z.number(),
+})
+
+export const CapabilitiesSchema = z.object({
+  security_master: z.enum(['READY', 'UNAVAILABLE']),
+  latest_market: z.enum(['READY', 'STALE', 'UNAVAILABLE']),
+  historical_ohlcv: z.enum(['READY', 'STALE', 'UNAVAILABLE']),
+  index_summary: z.enum(['READY', 'STALE', 'UNAVAILABLE']),
+  foreign_flow: z.enum(['READY', 'STALE', 'UNAVAILABLE']),
+  broker_market_flow: z.enum(['READY', 'STALE', 'UNAVAILABLE']),
+  news: z.enum(['READY', 'UNAVAILABLE']),
+  announcements: z.enum(['READY', 'UNAVAILABLE']),
+  latestTradingDate: z.string().nullable(),
+})
 
 export type PanelData = Quote | Candle[] | Security[] | Record<string, unknown>
 

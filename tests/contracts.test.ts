@@ -5,7 +5,7 @@ const meta = { source: 'idx-bei/stock_summary.parquet', fetchedAt: '2026-09-21T0
 
 describe('normalized market contract', () => {
   it('preserves null independently from actual zero', () => {
-    const quote = QuoteSchema.parse({ symbol: 'BBCA', timestamp: '2026-09-21', open: null, high: null, low: null, close: 0, previousClose: 0, change: 0, changePercent: null, volume: 0, value: null, frequency: null })
+    const quote = QuoteSchema.parse({ symbol: 'BBCA', timestamp: '2026-09-21', open: null, high: null, low: null, close: 0, previousClose: 0, change: 0, changePercent: null, volume: 0, value: null, frequency: null, foreignBuy: null, foreignSell: null })
     expect(quote.open).toBeNull()
     expect(quote.close).toBe(0)
     expect(quote.volume).toBe(0)

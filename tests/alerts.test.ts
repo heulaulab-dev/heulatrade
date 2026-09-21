@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { observedMetric, triggered } from '@/lib/alerts/evaluate'
 import type { Candle, Quote } from '@/lib/market/contracts'
 
-const quote: Quote = { symbol: 'BBCA', timestamp: '2026-09-21', open: null, high: null, low: null, close: 9100, previousClose: 9000, change: 100, changePercent: 100 / 9000, volume: 100, value: null, frequency: null }
+const quote: Quote = { symbol: 'BBCA', timestamp: '2026-09-21', open: null, high: null, low: null, close: 9100, previousClose: 9000, change: 100, changePercent: 100 / 9000, volume: 100, value: null, frequency: null, foreignBuy: null, foreignSell: null }
 const latest: Candle = { time: '2026-09-21', open: null, high: null, low: null, close: 9100, volume: 100, foreignBuy: 50, foreignSell: 30 }
 
 describe('EOD alert evaluation', () => {

@@ -20,7 +20,7 @@ Configure `MARKET_API_URL` for the frontend service to the routed market service
 
 For EOD alert evaluation, configure `SUPABASE_SERVICE_ROLE_KEY` and `ALERT_JOB_SECRET` **only on the server**, then schedule a `POST /api/jobs/evaluate-alerts` call with `Authorization: Bearer <ALERT_JOB_SECRET>` after each completed `idx-bei` ingestion. It processes enabled rules against dated normalized market snapshots; a unique `(alert_id, observed_as_of)` key prevents duplicate notifications. Monitor its `failed` and `unavailable` counts. Do not expose the endpoint secret or service key to browsers.
 
-The Python adapter is a read-only normalization boundary. It rejects unsupported fields, preserves null financial values, identifies source files and as-of dates, and never relabels EOD parquet snapshots as live quotes. `NEXT_PUBLIC_MARKET_WS_URL` is optional and only indicates connectivity to an upstream WebSocket; it does not make snapshot quotes live.
+The Python adapter is a read-only normalization boundary. It rejects unsupported fields, preserves null financial values, identifies source files and as-of dates, and never relabels EOD parquet snapshots as live quotes. Provider WebSocket credentials are owned only by the separately deployed running-trade gateway; browsers never connect to the provider directly.
 
 ## Verification
 

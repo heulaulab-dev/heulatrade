@@ -1,20 +1,12 @@
 'use client'
 import { useEffect, useRef } from 'react'
-import { AreaSeries, CandlestickSeries, HistogramSeries, LineSeries, createChart, type CandlestickData, type LineData, type Time } from 'lightweight-charts'
+import { AreaSeries, CandlestickSeries, HistogramSeries, LineSeries, createChart, type CandlestickData, type Time } from 'lightweight-charts'
 import type { Candle } from '@/lib/market/contracts'
+import { calculateMacd, calculateSimpleMovingAverage } from '@/lib/market/indicators'
 
 const NO_OVERLAYS: string[] = []
 
-function ema(rows: Candle[], period: number): LineData<Time>[] {
-  const alpha = 2 / (period + 1)
-  let value: number | null = null
-  return rows.map((row) => {
-    value = value === null ? row.close : row.close * alpha + value * (1 - alpha)
-    return { time: row.time as Time, value }
-  })
-}
-
-export function PriceChart({ candles, mode = 'CANDLE', overlays = NO_OVERLAYS }: { candles: Candle[]; mode?: 'CANDLE' | 'LINE' | 'AREA'; overlays?: string[] }) {
+export function PriceChart({ candles, mode = 'CANDLE', overlays = NO_OVERLAYS, macd = false }: { candles: Candle[]; mode?: 'CANDLE' | 'LINE' | 'AREA'; overlays?: string[]; macd?: boolean }) {
   const container = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!container.current) return
@@ -36,9 +28,10 @@ export function PriceChart({ candles, mode = 'CANDLE', overlays = NO_OVERLAYS }:
       const series = chart.addSeries(LineSeries, { color: '#b4b4b4', lineWidth: 2 })
       series.setData(sorted.map((row) => ({ time: row.time as Time, value: row.close })))
     }
-    for (const period of [20, 50, 200]) {
-      if (!overlays.includes(`EMA${period}`)) continue
-      chart.addSeries(LineSeries, { color: period === 20 ? '#da5c2c' : period === 50 ? '#8bbdcc' : '#b4b4b4', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }).setData(ema(sorted, period))
+    for (const period of [5, 20, 50]) {
+      if (!overlays.includes(`MA${period}`)) continue
+      chart.addSeries(LineSeries, { title: `MA${period}`, color: period === 5 ? '#d8c47a' : period === 20 ? '#da5c2c' : '#8bbdcc', lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+        .setData(calculateSimpleMovingAverage(sorted, period).map((point) => ({ time: point.time as Time, value: point.value })))
     }
     const volumeRows = sorted.filter((row) => row.volume !== null)
     if (volumeRows.length) {
@@ -46,8 +39,18 @@ export function PriceChart({ candles, mode = 'CANDLE', overlays = NO_OVERLAYS }:
         .setData(volumeRows.map((row) => ({ time: row.time as Time, value: row.volume!, color: '#606060' })))
       chart.panes()[1]?.setHeight(75)
     }
+    if (macd) {
+      const points = calculateMacd(sorted)
+      if (points.length) {
+        const pane = volumeRows.length ? 2 : 1
+        chart.addSeries(HistogramSeries, { title: 'MACD HIST', priceLineVisible: false, lastValueVisible: false }, pane).setData(points.map((point) => ({ time: point.time as Time, value: point.histogram, color: point.histogram >= 0 ? '#7eb89b88' : '#d0817988' })))
+        chart.addSeries(LineSeries, { title: 'MACD', color: '#8bbdcc', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane).setData(points.map((point) => ({ time: point.time as Time, value: point.macd })))
+        chart.addSeries(LineSeries, { title: 'SIGNAL', color: '#da5c2c', lineWidth: 1, priceLineVisible: false, lastValueVisible: false }, pane).setData(points.map((point) => ({ time: point.time as Time, value: point.signal })))
+        chart.panes()[pane]?.setHeight(80)
+      }
+    }
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [candles, mode, overlays])
+  }, [candles, mode, overlays, macd])
   return <div ref={container} className="h-full min-h-48 w-full" aria-label="Historical price chart" role="img" />
 }

@@ -1,0 +1,4 @@
+import { dateSchema, optionalParam, positiveInt, symbolSchema } from '@/lib/market/arjum/inputs'
+import { marketRoute } from '@/lib/market/arjum/route'
+import { getBrokerAccumulation } from '@/lib/market/arjum/server'
+export async function GET(request: Request, context: { params: Promise<{ code: string }> }) { return marketRoute(async () => { const code = symbolSchema.parse((await context.params).code); const p = new URL(request.url).searchParams; const startDate = optionalParam(p, 'start_date'); const endDate = optionalParam(p, 'end_date'); const top = optionalParam(p, 'top'); return getBrokerAccumulation(code, { startDate: startDate ? dateSchema.parse(startDate) : undefined, endDate: endDate ? dateSchema.parse(endDate) : undefined, top: top ? positiveInt.parse(top) : undefined, brokers: optionalParam(p, 'brokers')?.split(',').filter(Boolean) }, request.signal) }) }

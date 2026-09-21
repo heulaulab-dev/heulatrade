@@ -12,6 +12,13 @@ describe('terminal commands', () => {
     expect(parseCommand('CHART', null)).toMatchObject({ type: 'error', suggestions: ['BBCA CHART'] })
     expect(parseCommand('BBCA MARKE', null)).toMatchObject({ type: 'error', suggestions: ['MARKET'] })
   })
+  it('parses all provider terminal functions', () => {
+    for (const command of ['CHART', 'BROKER', 'BACC', 'TAPE', 'FUND', 'INSIDER', 'SEASONAL', 'ANALYSIS']) {
+      expect(parseCommand(`BBCA ${command}`, null)).toMatchObject({ type: 'execute', command, symbol: 'BBCA' })
+    }
+    expect(parseCommand('MKTCAP', 'BBCA')).toMatchObject({ type: 'execute', command: 'MKTCAP' })
+    expect(parseCommand('LIVE', 'BBCA')).toMatchObject({ type: 'execute', command: 'LIVE' })
+  })
   it('keeps a locked panel on its symbol', () => {
     const store = useTerminalStore.getState()
     store.setSymbol('BBCA')
@@ -21,6 +28,6 @@ describe('terminal commands', () => {
     const after = listPanels(useTerminalStore.getState().layout).find((row) => row.id === panel.id)
     expect(after?.symbol).toBe('BBCA')
     expect(after?.locked).toBe(true)
-    expect(listPanels(useTerminalStore.getState().layout).find((row) => row.type === 'MARKET')?.symbol).toBeNull()
+    expect(listPanels(useTerminalStore.getState().layout).filter((row) => !row.locked).every((row) => row.symbol === 'TLKM')).toBe(true)
   })
 })

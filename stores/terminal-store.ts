@@ -10,12 +10,26 @@ let sequence = 0
 function id() { sequence += 1; return `panel-${Date.now()}-${sequence}` }
 const pane = (type: PanelType, symbol: string | null = null): LayoutNode => ({ kind: 'panel', panel: { id: id(), type, symbol, locked: false, settings: {} } })
 const defaultPane = (panelId: string, type: PanelType): LayoutNode => ({ kind: 'panel', panel: { id: panelId, type, symbol: null, locked: false, settings: {} } })
-const initial: LayoutNode = {
-  kind: 'split', id: 'default-root', direction: 'vertical', children: [
-    { kind: 'split', id: 'default-top', direction: 'horizontal', children: [defaultPane('default-watchlist', 'WL'), defaultPane('default-chart', 'CHART')] },
-    { kind: 'split', id: 'default-bottom', direction: 'horizontal', children: [defaultPane('default-market', 'MARKET'), defaultPane('default-news', 'NEWS')] },
-  ],
+const defaultRow = (id: string, left: PanelType, right: PanelType, sizes: [number, number] = [68, 32]): LayoutNode => ({
+  kind: 'split', id, direction: 'horizontal', sizes,
+  children: [defaultPane(`${id}-left`, left), defaultPane(`${id}-right`, right)],
+})
+
+export function securityWorkspaceLayout(): LayoutNode {
+  return {
+    kind: 'split', id: 'security-root', direction: 'vertical', sizes: [84, 16], children: [
+      {
+        kind: 'split', id: 'security-upper', direction: 'vertical', sizes: [62, 38], children: [
+          { kind: 'split', id: 'security-upper-a', direction: 'vertical', sizes: [68, 32], children: [defaultRow('security-chart', 'CHART', 'SEASONAL'), defaultRow('security-quote', 'QUOTE', 'TAPE', [45, 55])] },
+          { kind: 'split', id: 'security-upper-b', direction: 'vertical', sizes: [50, 50], children: [defaultRow('security-broker', 'BROKER', 'ANALYSIS', [55, 45]), defaultRow('security-insider', 'INSIDER', 'HISTORY', [55, 45])] },
+        ],
+      },
+      defaultPane('security-fund', 'FUND'),
+    ],
+  }
 }
+
+const initial = securityWorkspaceLayout()
 
 function mapPanels(node: LayoutNode, fn: (panel: Panel) => Panel): LayoutNode {
   return node.kind === 'panel' ? { kind: 'panel', panel: fn(node.panel) } : { ...node, children: node.children.map((child) => mapPanels(child, fn)) as [LayoutNode, LayoutNode] }
@@ -85,4 +99,7 @@ export function findPanel(node: LayoutNode, id: string): Panel | null {
 }
 export function listPanels(node: LayoutNode): Panel[] {
   return node.kind === 'panel' ? [node.panel] : [...listPanels(node.children[0]), ...listPanels(node.children[1])]
+}
+export function findPanelByType(node: LayoutNode, type: PanelType): Panel | null {
+  return node.kind === 'panel' ? node.panel.type === type ? node.panel : null : findPanelByType(node.children[0], type) ?? findPanelByType(node.children[1], type)
 }

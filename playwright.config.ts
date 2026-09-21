@@ -6,6 +6,8 @@ const cachedBrowser = globSync(`${homedir()}/.cache/ms-playwright/chromium_headl
 
 export default defineConfig({
   testDir: './tests/e2e',
+  timeout: 60_000,
+  workers: 1,
   use: { baseURL: 'http://127.0.0.1:3000', ...devices['Desktop Chrome'], launchOptions: cachedBrowser ? { executablePath: cachedBrowser } : undefined },
   webServer: {
     command: 'bun run dev --hostname 127.0.0.1',

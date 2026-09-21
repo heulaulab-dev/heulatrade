@@ -8,36 +8,13 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { Providers } from './providers'
 import { MarketPanelContent } from '@/components/panels/market-panels'
-import { listPanels, findPanel, useTerminalStore, type LayoutNode, type Panel } from '@/stores/terminal-store'
+import { listPanels, findPanel, findPanelByType, useTerminalStore, type LayoutNode, type Panel } from '@/stores/terminal-store'
 import { parseCommand, registry, symbolPanels, type CommandName, type PanelType } from '@/lib/commands/registry'
 import { LayoutSchema, sameJson } from '@/lib/workspace-schema'
 import { createClient } from '@/lib/supabase/client'
-import { securitiesQuery } from '@/lib/api/client'
+import { providerHealthQuery, searchQuery } from '@/lib/api/market-client'
 
-const functionKeys: CommandName[] = ['HELP', 'MARKET', 'CHART', 'BROKER', 'FOREIGN', 'FUND', 'PROFILE', 'SCREENER', 'PORT', 'NEWS']
-
-function useMarketSocket() {
-  const [state, setState] = useState<'OFFLINE' | 'CONNECTING' | 'RECONNECTING' | 'CONNECTED'>('OFFLINE')
-  useEffect(() => {
-    const url = process.env.NEXT_PUBLIC_MARKET_WS_URL
-    if (!url) return
-    let socket: WebSocket | null = null
-    let timeout: ReturnType<typeof setTimeout> | null = null
-    let attempt = 0
-    let closed = false
-    function connect() {
-      if (closed) return
-      setState(attempt ? 'RECONNECTING' : 'CONNECTING')
-      socket = new WebSocket(url!)
-      socket.onopen = () => { attempt = 0; setState('CONNECTED') }
-      socket.onclose = () => { if (closed) return; setState('RECONNECTING'); attempt += 1; timeout = setTimeout(connect, Math.min(30_000, 500 * 2 ** attempt) + Math.random() * 400) }
-      socket.onerror = () => socket?.close()
-    }
-    connect()
-    return () => { closed = true; if (timeout) clearTimeout(timeout); socket?.close() }
-  }, [])
-  return state
-}
+const functionKeys: CommandName[] = ['HELP', 'MARKET', 'CHART', 'BROKER', 'BACC', 'TAPE', 'FUND', 'INSIDER', 'SCREENER', 'MKTCAP']
 
 function PanelView({ panel, userId }: { panel: Panel; userId: string | null }) {
   const store = useTerminalStore()
@@ -81,11 +58,11 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
   const readyToPersist = useRef(false)
   const [saveMessage, setSaveMessage] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-  const socketState = useMarketSocket()
   const queryClient = useQueryClient()
   const supabase = useMemo(() => userId ? createClient() : null, [userId])
   const workspaceQuery = useQuery({ queryKey: ['workspaces', userId], enabled: Boolean(supabase), queryFn: async () => { const { data, error } = await supabase!.from('workspaces').select('id,name,layout,is_default,updated_at').order('updated_at', { ascending: false }); if (error) throw error; if (data?.some((row) => !LayoutSchema.safeParse(row.layout).success)) throw new Error('Saved workspace layout is invalid'); return data ?? [] } })
-  const securitySearch = useQuery({ queryKey: ['palette-securities', input], queryFn: () => securitiesQuery(input), enabled: palette && input.trim().length >= 2 && !input.includes(' '), staleTime: 60_000 })
+  const securitySearch = useQuery({ queryKey: ['arjum', 'search', input], queryFn: () => searchQuery(input), enabled: palette && input.trim().length >= 2 && !input.includes(' '), staleTime: 60_000 })
+  const providerHealth = useQuery({ queryKey: ['arjum', 'health'], queryFn: providerHealthQuery, staleTime: 60_000, retry: 0 })
   useEffect(() => {
     if (!supabase || !userId) return
     const channel = supabase.channel(`user-data:${userId}`)
@@ -130,7 +107,15 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
     store.setCommandError(null)
     if (parsed.type === 'symbol') store.setSymbol(parsed.symbol)
     else if (parsed.command === 'HELP') { setInput(''); setPalette(true); return }
-    else { if (parsed.symbol && parsed.symbol !== store.activeSymbol) store.setSymbol(parsed.symbol); store.openPanel(parsed.command as PanelType, parsed.symbol) }
+    else {
+      if (parsed.symbol && parsed.symbol !== store.activeSymbol) store.setSymbol(parsed.symbol)
+      const existing = findPanelByType(store.layout, parsed.command as PanelType)
+      if (existing) {
+        store.setFocused(existing.id)
+        requestAnimationFrame(() => document.getElementById(`terminal-panel-${existing.id}`)?.focus())
+      } else if (store.focusedPanel) store.replacePanel(store.focusedPanel, parsed.command as PanelType)
+      else store.openPanel(parsed.command as PanelType, parsed.symbol)
+    }
     setInput(''); setPalette(false)
   }
   useEffect(() => {
@@ -165,7 +150,7 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
     <header className="flex min-h-11 items-center gap-3 border-b border-[var(--color-iron)] px-3">
       <div className="shrink-0 text-[13px] font-bold tracking-tight">HEULA<span className="text-[var(--color-ember)]">/</span>TRADE</div>
       <form className="flex min-w-0 flex-1 items-center" onSubmit={(event) => { event.preventDefault(); execute(input) }}><span className="mr-2 text-[var(--color-ember)]">›</span><input ref={inputRef} aria-label="Terminal command" className="h-8 min-w-0 w-full max-w-xl border border-[var(--color-slate)] bg-[var(--color-carbon)] px-2 text-[12px] outline-none focus:border-[var(--color-ember)]" value={input} onChange={(event) => setInput(event.target.value)} placeholder="BBCA CHART  /  MARKET  /  SCREENER" autoComplete="off" /><button className="ml-1 border border-[var(--color-slate)] px-2 py-1 text-[10px] hover:bg-[var(--color-graphite)]" type="submit">GO ↵</button></form>
-      <div className="hidden shrink-0 items-center gap-3 text-[10px] sm:flex"><span className="text-[var(--color-ash)]">{socketState === 'CONNECTED' ? '● FEED CONNECTED' : `○ ${socketState}`}</span><button className="terminal-action" onClick={() => setPalette(true)}>⌘K</button><button className="terminal-action" aria-label="Notifications" onClick={() => execute('ALERTS')}><Bell className="size-3" /></button>{userId && <button className="terminal-action" onClick={signOut}>SIGN OUT</button>}</div>
+      <div className="hidden shrink-0 items-center gap-3 text-[10px] sm:flex"><span className="text-[var(--color-ash)]">{providerHealth.data?.data.ok ? '● API READY' : '○ API OFFLINE'} · WS OFFLINE</span><button className="terminal-action" onClick={() => setPalette(true)}>⌘K</button><button className="terminal-action" aria-label="Notifications" onClick={() => execute('ALERTS')}><Bell className="size-3" /></button>{userId && <button className="terminal-action" onClick={signOut}>SIGN OUT</button>}</div>
     </header>
     <nav aria-label="Functions" className="terminal-scroll flex min-h-8 items-center overflow-x-auto border-b border-[var(--color-iron)] px-2">{functionKeys.map((command) => <button key={command} className="terminal-action shrink-0 text-[10px]" onClick={() => execute(command)}><span className="mr-1 text-[var(--color-steel)]">{registry[command].shortcut}</span>{command}</button>)}</nav>
     <div className="flex min-h-8 items-center gap-4 overflow-hidden border-b border-[var(--color-iron)] bg-[var(--color-carbon)] px-3 text-[10px]"><span className="shrink-0 text-[var(--color-ash)]">GLOBAL</span><strong className="cyan">{store.activeSymbol ?? 'NO SECURITY'}</strong><span className="text-[var(--color-steel)]">IDX · WIB</span><span className="ml-auto truncate text-[var(--color-ash)]">{configurationMissing ? 'SUPABASE NOT CONFIGURED' : saveMessage || store.commandError || 'READ THE MARKET. FOLLOW THE FLOW.'}</span></div>

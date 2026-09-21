@@ -9,10 +9,10 @@ import { createClient } from '@/lib/supabase/client'
 import { calculatePortfolio, type Transaction } from '@/lib/portfolio'
 import { AlertsPanel } from './alerts'
 import { SignalsPanel } from './signals'
-import { ScreenerPanel } from './screener'
-import { ActionsPanel, FundamentalsPanel, MarketOverview, ProfilePanel } from './research-panels'
+import { ActionsPanel, MarketOverview, ProfilePanel } from './research-panels'
 import type { PanelType } from '@/lib/commands/registry'
 import type { Quote } from '@/lib/market/contracts'
+import { AnalysisPanel, BrokerAccumulationPanel, BrokerPanel, FinancialPanel, HistoryPanel, InsiderPanel, LivePanel, MarketCapPanel, ProviderChartPanel, ProviderScreenerPanel, QuotePanel, SeasonalityPanel, TapePanel } from './provider-panels'
 
 function QuoteLine({ quote }: { quote: Quote }) {
   return <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-[var(--color-iron)] px-2 py-2">
@@ -147,13 +147,28 @@ function Portfolio({ userId }: { userId: string | null }) {
 function Help() { return <div className="p-2"><table className="mono-table"><thead><tr><th>COMMAND</th><th>ACTION</th><th>KEY</th></tr></thead><tbody>{Object.entries({ MARKET: 'Market overview', CHART: 'Price chart', BROKER: 'Broker flow', FOREIGN: 'Foreign flow', FUND: 'Fundamentals', PROFILE: 'Company profile', SCREENER: 'Screener', PORT: 'Portfolio', NEWS: 'News' }).map(([command, description], index) => <tr key={command}><td className="cyan">{command}</td><td>{description}</td><td className="muted">F{index + 2}</td></tr>)}</tbody></table><p className="p-2 text-[var(--color-ash)]">SYMBOL then FUNCTION: BBCA CHART · / command · Ctrl/Cmd K palette · Alt 1–9 panels</p></div> }
 
 export function MarketPanelContent({ type, symbol, userId, onSelect }: { type: PanelType; symbol: string | null; userId: string | null; onSelect: (symbol: string) => void }) {
-  if (type === 'CHART' || type === 'FOREIGN' || type === 'BROKER' || type === 'ANN') return <StockResearch symbol={symbol} type={type} />
-  if (type === 'FUND' || type === 'PROFILE' || type === 'OWNERSHIP' || type === 'CORP') {
+  if (['CHART', 'QUOTE', 'HISTORY', 'BROKER', 'BACC', 'TAPE', 'FUND', 'INSIDER', 'SEASONAL', 'ANALYSIS'].includes(type)) {
     if (!symbol) return <PanelMessage state="EMPTY" detail="Select a security with the command bar." />
-    return type === 'FUND' ? <FundamentalsPanel symbol={symbol} /> : type === 'CORP' ? <ActionsPanel symbol={symbol} /> : <ProfilePanel symbol={symbol} ownership={type === 'OWNERSHIP'} />
+    if (type === 'CHART') return <ProviderChartPanel symbol={symbol} />
+    if (type === 'QUOTE') return <QuotePanel symbol={symbol} />
+    if (type === 'HISTORY') return <HistoryPanel symbol={symbol} />
+    if (type === 'BROKER') return <BrokerPanel symbol={symbol} />
+    if (type === 'BACC') return <BrokerAccumulationPanel symbol={symbol} />
+    if (type === 'TAPE') return <TapePanel symbol={symbol} />
+    if (type === 'FUND') return <FinancialPanel symbol={symbol} />
+    if (type === 'INSIDER') return <InsiderPanel symbol={symbol} />
+    if (type === 'SEASONAL') return <SeasonalityPanel symbol={symbol} />
+    return <AnalysisPanel symbol={symbol} />
+  }
+  if (type === 'FOREIGN' || type === 'ANN') return <StockResearch symbol={symbol} type={type} />
+  if (type === 'PROFILE' || type === 'OWNERSHIP' || type === 'CORP') {
+    if (!symbol) return <PanelMessage state="EMPTY" detail="Select a security with the command bar." />
+    return type === 'CORP' ? <ActionsPanel symbol={symbol} /> : <ProfilePanel symbol={symbol} ownership={type === 'OWNERSHIP'} />
   }
   if (type === 'MARKET') return <MarketPanel onSelect={onSelect} />
-  if (type === 'SCREENER') return <ScreenerPanel userId={userId} onSelect={onSelect} />
+  if (type === 'SCREENER') return <ProviderScreenerPanel onSelect={onSelect} />
+  if (type === 'MKTCAP') return <MarketCapPanel onSelect={onSelect} />
+  if (type === 'LIVE') return <LivePanel />
   if (type === 'WL') return <Watchlist userId={userId} onSelect={onSelect} />
   if (type === 'PORT') return <Portfolio userId={userId} />
   if (type === 'ALERTS') return <AlertsPanel userId={userId} symbol={symbol} />

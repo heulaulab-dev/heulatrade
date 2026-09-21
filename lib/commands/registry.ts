@@ -2,11 +2,20 @@ export const registry = {
   HELP: { aliases: ['?'], requiresSymbol: false, description: 'Command reference', shortcut: 'F1' },
   MARKET: { aliases: ['MKT', 'MOVERS'], requiresSymbol: false, description: 'Market overview', shortcut: 'F2' },
   CHART: { aliases: ['GP', 'GRAPH'], requiresSymbol: true, description: 'Price and volume', shortcut: 'F3' },
+  QUOTE: { aliases: ['SNAPSHOT'], requiresSymbol: true, description: 'Security quote snapshot', shortcut: '' },
+  HISTORY: { aliases: ['HIST'], requiresSymbol: true, description: 'Historical price table', shortcut: '' },
   BROKER: { aliases: ['BRKR', 'FLOW'], requiresSymbol: true, description: 'Broker flow', shortcut: 'F4' },
+  BACC: { aliases: ['BROKERACC'], requiresSymbol: true, description: 'Broker accumulation', shortcut: '' },
+  TAPE: { aliases: ['DONE'], requiresSymbol: true, description: 'Live and historical tape', shortcut: '' },
   FOREIGN: { aliases: ['FRGN'], requiresSymbol: true, description: 'Foreign flow', shortcut: 'F5' },
   FUND: { aliases: ['FA', 'FUNDAMENTAL'], requiresSymbol: true, description: 'Fundamentals', shortcut: 'F6' },
+  INSIDER: { aliases: ['INSIDERS'], requiresSymbol: true, description: 'Insider transactions', shortcut: '' },
+  SEASONAL: { aliases: ['SEASONALITY'], requiresSymbol: true, description: 'Seasonality matrix', shortcut: '' },
+  ANALYSIS: { aliases: ['ANALYZE'], requiresSymbol: true, description: 'Provider analysis', shortcut: '' },
   PROFILE: { aliases: ['COMPANY'], requiresSymbol: true, description: 'Company profile', shortcut: 'F7' },
   SCREENER: { aliases: ['SCREEN'], requiresSymbol: false, description: 'Security screener', shortcut: 'F8' },
+  MKTCAP: { aliases: ['MARKETCAP'], requiresSymbol: false, description: 'Market capitalization', shortcut: '' },
+  LIVE: { aliases: [], requiresSymbol: false, description: 'Live market activity', shortcut: '' },
   PORT: { aliases: ['PORTFOLIO'], requiresSymbol: false, description: 'Portfolio tracker', shortcut: 'F9' },
   NEWS: { aliases: [], requiresSymbol: false, description: 'News headlines', shortcut: 'F10' },
   WL: { aliases: ['WATCHLIST'], requiresSymbol: false, description: 'Watchlists', shortcut: '' },
@@ -19,7 +28,7 @@ export const registry = {
 
 export type CommandName = keyof typeof registry
 export type PanelType = Exclude<CommandName, 'HELP'>
-export const symbolPanels = new Set<PanelType>(['CHART', 'BROKER', 'FOREIGN', 'FUND', 'PROFILE', 'OWNERSHIP', 'CORP', 'ANN', 'NEWS'])
+export const symbolPanels = new Set<PanelType>(['CHART', 'QUOTE', 'HISTORY', 'BROKER', 'BACC', 'TAPE', 'FOREIGN', 'FUND', 'INSIDER', 'SEASONAL', 'ANALYSIS', 'PROFILE', 'OWNERSHIP', 'CORP', 'ANN', 'NEWS'])
 
 const lookup = Object.entries(registry).flatMap(([name, value]) =>
   [name, ...value.aliases].map((alias) => [alias, name as CommandName] as const),
