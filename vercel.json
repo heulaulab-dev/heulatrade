@@ -5,7 +5,9 @@
       "framework": "nextjs"
     },
     "market-api": {
-      "root": "services/market-api"
+      "root": "services/market-api",
+      "framework": "fastapi",
+      "entrypoint": "app:app"
     }
   },
   "rewrites": [

@@ -12,6 +12,12 @@ Requirements: Bun 1.3+, Python 3.13 with `uv`, an operating Supabase project, an
 4. In `services/market-api`, run `uv sync --extra test` and `IDX_BEI_DATA_DIR=/absolute/path/to/idx-bei/data uv run uvicorn app:app --host 127.0.0.1 --port 8100`. Keep this service private to the Next.js server. Set `MARKET_API_URL=http://127.0.0.1:8100` in `.env.local`.
 5. Run `bun run dev`, then visit `/terminal`. Without Supabase credentials the terminal opens in a configuration-warning mode; persistent user workflows require sign-in.
 
+## Vercel deployment
+
+The Vercel project uses Services: `frontend` is the Next.js UI/BFF and `market-api` is the FastAPI market-data service rooted at `services/market-api`. The Python service entrypoint is `app:app`, from `services/market-api/app.py`.
+
+Configure `MARKET_API_URL` for the frontend service to the routed market service path on the same deployment, for example `https://<deployment-host>/api/market-api`. Configure `IDX_BEI_DATA_DIR` for the `market-api` service to the directory containing the exported `idx-bei` datasets. The Python dependencies are declared in `services/market-api/pyproject.toml` and installed by Vercel from that service root.
+
 For EOD alert evaluation, configure `SUPABASE_SERVICE_ROLE_KEY` and `ALERT_JOB_SECRET` **only on the server**, then schedule a `POST /api/jobs/evaluate-alerts` call with `Authorization: Bearer <ALERT_JOB_SECRET>` after each completed `idx-bei` ingestion. It processes enabled rules against dated normalized market snapshots; a unique `(alert_id, observed_as_of)` key prevents duplicate notifications. Monitor its `failed` and `unavailable` counts. Do not expose the endpoint secret or service key to browsers.
 
 The Python adapter is a read-only normalization boundary. It rejects unsupported fields, preserves null financial values, identifies source files and as-of dates, and never relabels EOD parquet snapshots as live quotes. `NEXT_PUBLIC_MARKET_WS_URL` is optional and only indicates connectivity to an upstream WebSocket; it does not make snapshot quotes live.
