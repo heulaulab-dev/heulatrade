@@ -7,7 +7,7 @@ HeulaTrade is a desktop-first IDX research terminal. The Next.js application is 
 Requirements: Bun 1.3+, Python 3.13 with `uv`, an operating Supabase project, and an `idx-bei` data directory populated by its ingestion jobs. No production market fixtures are bundled.
 
 1. Run `bun install` at the repository root and copy `.env.example` to `.env.local`. Set the Supabase URL and publishable key. Do **not** put the service-role key in a `NEXT_PUBLIC_` variable or the frontend environment.
-2. Apply `supabase/migrations/20260920183320_initial_schema.sql` to your Supabase project. Configure email/password and Google Auth as needed, and allow `/auth/callback` as a redirect URL. Apply migrations in a staging project first; the SQL has not been exercised against a live project in this workspace.
+2. The initial schema migration, `supabase/migrations/20260921002404_initial_schema.sql`, was applied to Supabase project `rdpusflzpfqrdrrcozav` through MCP. Configure email/password and Google Auth as needed, and allow `/auth/callback` as a redirect URL. For a different project, inspect its schema and migration history before deploying migrations.
 3. Run the `idx-bei` ingestion and parquet export jobs following its own documentation. Point `IDX_BEI_DATA_DIR` at the resulting data directory; `/ready` requires `parquet/stock_summary.parquet` and `allCompanies.json`. Other adapter routes need `index_summary.parquet`, `financial_ratios.parquet`, `corporate_actions.parquet`, `companyDetailsByKodeEmiten.json`, or a briefing snapshot. Missing files return an explicit unavailable error.
 4. In `services/market-api`, run `uv sync --extra test` and `IDX_BEI_DATA_DIR=/absolute/path/to/idx-bei/data uv run uvicorn app:app --host 127.0.0.1 --port 8100`. Keep this service private to the Next.js server. Set `MARKET_API_URL=http://127.0.0.1:8100` in `.env.local`.
 5. Run `bun run dev`, then visit `/terminal`. Without Supabase credentials the terminal opens in a configuration-warning mode; persistent user workflows require sign-in.
@@ -21,7 +21,7 @@ The Python adapter is a read-only normalization boundary. It rejects unsupported
 - `bun run typecheck`, `bun run lint`, `bun run test`, `bun run build`
 - `bun run test:e2e` for terminal browser flows; Playwright needs a local browser and permission to bind a localhost test server.
 - `cd services/market-api && uv run --extra test python -m pytest -q` for Python contract tests.
-- Apply the migration to an isolated local Supabase database, then run `supabase/tests/rls.sql` as a regression check. This is still required before deployment; Docker/Supabase local database integration was unavailable in this workspace.
+- Apply the canonical migration through an authorized Supabase migration connection, then run `supabase/tests/rls.sql` against a controlled test database. These database checks remain required before production deployment.
 
 ## Source limitations and deployment gate
 

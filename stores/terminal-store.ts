@@ -1,8 +1,9 @@
 'use client'
 import { create } from 'zustand'
 import { symbolPanels, type PanelType } from '@/lib/commands/registry'
+import type { Json } from '@/lib/supabase/database.types'
 
-export type Panel = { id: string; type: PanelType; symbol: string | null; locked: boolean; settings: Record<string, unknown> }
+export type Panel = { id: string; type: PanelType; symbol: string | null; locked: boolean; settings: Record<string, Json | undefined> }
 export type LayoutNode = { kind: 'panel'; panel: Panel } | { kind: 'split'; id: string; direction: 'horizontal' | 'vertical'; sizes?: [number, number]; children: [LayoutNode, LayoutNode] }
 
 let sequence = 0

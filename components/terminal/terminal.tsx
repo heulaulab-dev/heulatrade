@@ -10,7 +10,7 @@ import { Providers } from './providers'
 import { MarketPanelContent } from '@/components/panels/market-panels'
 import { listPanels, findPanel, useTerminalStore, type LayoutNode, type Panel } from '@/stores/terminal-store'
 import { parseCommand, registry, symbolPanels, type CommandName, type PanelType } from '@/lib/commands/registry'
-import { LayoutSchema } from '@/lib/workspace-schema'
+import { LayoutSchema, sameJson } from '@/lib/workspace-schema'
 import { createClient } from '@/lib/supabase/client'
 import { securitiesQuery } from '@/lib/api/client'
 
@@ -77,12 +77,14 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
   const [input, setInput] = useState('')
   const [palette, setPalette] = useState(false)
   const [workspaceName, setWorkspaceName] = useState<string | null>(null)
+  const workspaceId = useRef<string | null>(null)
+  const readyToPersist = useRef(false)
   const [saveMessage, setSaveMessage] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const socketState = useMarketSocket()
   const queryClient = useQueryClient()
   const supabase = useMemo(() => userId ? createClient() : null, [userId])
-  const workspaceQuery = useQuery({ queryKey: ['workspaces', userId], enabled: Boolean(supabase), queryFn: async () => { const { data, error } = await supabase!.from('workspaces').select('id,name,layout,is_default,updated_at').order('updated_at', { ascending: false }); if (error) throw error; return data ?? [] } })
+  const workspaceQuery = useQuery({ queryKey: ['workspaces', userId], enabled: Boolean(supabase), queryFn: async () => { const { data, error } = await supabase!.from('workspaces').select('id,name,layout,is_default,updated_at').order('updated_at', { ascending: false }); if (error) throw error; if (data?.some((row) => !LayoutSchema.safeParse(row.layout).success)) throw new Error('Saved workspace layout is invalid'); return data ?? [] } })
   const securitySearch = useQuery({ queryKey: ['palette-securities', input], queryFn: () => securitiesQuery(input), enabled: palette && input.trim().length >= 2 && !input.includes(' '), staleTime: 60_000 })
   useEffect(() => {
     if (!supabase || !userId) return
@@ -100,9 +102,28 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
     const saved = workspaceQuery.data.find((row) => row.is_default) ?? workspaceQuery.data[0]
     if (saved) {
       const parsed = LayoutSchema.safeParse(saved.layout)
-      if (parsed.success) store.restore(parsed.data as LayoutNode)
+      if (parsed.success) {
+        store.restore(parsed.data as LayoutNode)
+        workspaceId.current = saved.id
+      }
     }
+    readyToPersist.current = true
   }, [workspaceQuery.data, store])
+  useEffect(() => {
+    if (!supabase || !userId || !workspaceId.current || !readyToPersist.current) return
+    const activeId = workspaceId.current
+    const saved = workspaceQuery.data?.find((row) => row.id === activeId)
+    if (!saved || sameJson(saved.layout, store.layout)) return
+    const timeout = setTimeout(async () => {
+      const { error } = await supabase.from('workspaces').update({ layout: store.layout }).eq('id', activeId)
+      if (error) setSaveMessage(error.message)
+      else {
+        setSaveMessage('SAVED')
+        void queryClient.invalidateQueries({ queryKey: ['workspaces', userId] })
+      }
+    }, 700)
+    return () => clearTimeout(timeout)
+  }, [supabase, userId, workspaceQuery.data, store.layout, queryClient])
   function execute(value: string) {
     const parsed = parseCommand(value, store.activeSymbol)
     if (parsed.type === 'error') { store.setCommandError(`${parsed.message}${parsed.suggestions.length ? ` · TRY ${parsed.suggestions.join(', ')}` : ''}`); return }
@@ -128,11 +149,16 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
   async function saveWorkspace() {
     if (!supabase || !userId) { setSaveMessage('Sign in to save workspaces.'); return }
     const name = (workspaceName ?? workspaceQuery.data?.find((row) => row.is_default)?.name ?? '').trim() || 'Research Workspace'
-    const { error } = await supabase.rpc('save_workspace', { p_name: name, p_layout: store.layout as unknown as Record<string, unknown> })
+    const { data, error } = await supabase.rpc('save_workspace', { p_name: name, p_layout: store.layout })
     if (error) setSaveMessage(error.message)
-    else { setSaveMessage('SAVED'); setWorkspaceName(name); queryClient.invalidateQueries({ queryKey: ['workspaces', userId] }) }
+    else { setSaveMessage('SAVED'); setWorkspaceName(name); workspaceId.current = data; queryClient.invalidateQueries({ queryKey: ['workspaces', userId] }) }
   }
-  async function signOut() { if (!supabase) return; await supabase.auth.signOut(); location.href = '/login' }
+  async function signOut() {
+    if (!supabase) return
+    const { error } = await supabase.auth.signOut()
+    if (error) { setSaveMessage(error.message); return }
+    location.href = '/login'
+  }
   const shown = store.maximizedPanel ? findPanel(store.layout, store.maximizedPanel) : null
   const panels = listPanels(store.layout)
   return <main className="flex h-dvh min-h-0 flex-col overflow-hidden bg-black text-[var(--color-paper)]">
@@ -143,7 +169,7 @@ function TerminalInner({ userId, configurationMissing }: { userId: string | null
     </header>
     <nav aria-label="Functions" className="terminal-scroll flex min-h-8 items-center overflow-x-auto border-b border-[var(--color-iron)] px-2">{functionKeys.map((command) => <button key={command} className="terminal-action shrink-0 text-[10px]" onClick={() => execute(command)}><span className="mr-1 text-[var(--color-steel)]">{registry[command].shortcut}</span>{command}</button>)}</nav>
     <div className="flex min-h-8 items-center gap-4 overflow-hidden border-b border-[var(--color-iron)] bg-[var(--color-carbon)] px-3 text-[10px]"><span className="shrink-0 text-[var(--color-ash)]">GLOBAL</span><strong className="cyan">{store.activeSymbol ?? 'NO SECURITY'}</strong><span className="text-[var(--color-steel)]">IDX · WIB</span><span className="ml-auto truncate text-[var(--color-ash)]">{configurationMissing ? 'SUPABASE NOT CONFIGURED' : saveMessage || store.commandError || 'READ THE MARKET. FOLLOW THE FLOW.'}</span></div>
-    <div className="flex min-h-8 items-center gap-2 border-b border-[var(--color-iron)] px-2 text-[10px]"><span className="text-[var(--color-ash)]">WORKSPACE</span><input aria-label="Workspace name" className="h-6 w-40 border border-[var(--color-slate)] bg-[var(--color-carbon)] px-2" value={workspaceName ?? workspaceQuery.data?.find((row) => row.is_default)?.name ?? ''} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Research Workspace" /><button className="terminal-action border border-[var(--color-slate)]" onClick={saveWorkspace}>SAVE</button><select aria-label="Load workspace" className="h-6 max-w-48 border border-[var(--color-slate)] bg-[var(--color-carbon)] text-[10px]" value="" onChange={(event) => { const row = workspaceQuery.data?.find((w) => w.id === event.target.value); const parsed = LayoutSchema.safeParse(row?.layout); if (row && parsed.success) { store.restore(parsed.data as LayoutNode); setWorkspaceName(row.name) } }}><option value="">LOAD WORKSPACE</option>{workspaceQuery.data?.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><span className="ml-auto hidden text-[var(--color-steel)] md:block">/ COMMAND · ALT 1–9 PANEL · F1 HELP</span></div>
+    <div className="flex min-h-8 items-center gap-2 border-b border-[var(--color-iron)] px-2 text-[10px]"><span className="text-[var(--color-ash)]">WORKSPACE</span><input aria-label="Workspace name" className="h-6 w-40 border border-[var(--color-slate)] bg-[var(--color-carbon)] px-2" value={workspaceName ?? workspaceQuery.data?.find((row) => row.is_default)?.name ?? ''} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Research Workspace" /><button className="terminal-action border border-[var(--color-slate)]" onClick={saveWorkspace}>SAVE</button><select aria-label="Load workspace" className="h-6 max-w-48 border border-[var(--color-slate)] bg-[var(--color-carbon)] text-[10px]" value="" onChange={(event) => { const row = workspaceQuery.data?.find((w) => w.id === event.target.value); const parsed = LayoutSchema.safeParse(row?.layout); if (row && parsed.success) { workspaceId.current = row.id; store.restore(parsed.data as LayoutNode); setWorkspaceName(row.name) } }}><option value="">LOAD WORKSPACE</option>{workspaceQuery.data?.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>{workspaceQuery.isError && <button className="text-[var(--warning)]" onClick={() => workspaceQuery.refetch()}>WORKSPACE LOAD FAILED · RETRY</button>}<span className="ml-auto hidden text-[var(--color-steel)] md:block">/ COMMAND · ALT 1–9 PANEL · F1 HELP</span></div>
     <div className="hidden min-h-0 flex-1 p-[2px] sm:block">{shown ? <PanelView panel={shown} userId={userId} /> : <WorkspaceNode node={store.layout} userId={userId} />}</div>
     <div className="flex min-h-0 flex-1 flex-col p-[2px] sm:hidden"><select aria-label="Mobile panel" className="terminal-input mb-1" value={store.focusedPanel ?? panels[0]?.id} onChange={(event) => store.setFocused(event.target.value)}>{panels.map((panel) => <option key={panel.id} value={panel.id}>{panel.type} {panel.symbol ?? ''}</option>)}</select>{panels.map((panel) => panel.id === (store.focusedPanel ?? panels[0]?.id) ? <PanelView key={panel.id} panel={panel} userId={userId} /> : null)}</div>
     <footer className="flex min-h-6 items-center justify-between border-t border-[var(--color-iron)] px-2 text-[10px] text-[var(--color-steel)]"><span>HEULATRADE / IDX INTELLIGENCE TERMINAL</span><span>RESEARCH ONLY · DATA FRESHNESS SHOWN PER PANEL</span></footer>

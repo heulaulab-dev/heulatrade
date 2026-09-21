@@ -1,7 +1,8 @@
 'use client'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { z } from 'zod'
 import { screenerQuery } from '@/lib/api/client'
 import { ScreenConditionSchema, ScreenFieldSchema, type ScreenCondition } from '@/lib/market/contracts'
 import { formatCompact, formatNumber, formatPercent, marketDirection } from '@/lib/format'
@@ -13,6 +14,9 @@ const labels: Record<string, string> = { price: 'PRICE', volume: 'VOLUME', value
 const defaultCondition: ScreenCondition = { field: 'value', operator: 'GT', value: 0, connective: 'AND' }
 const columns = ['symbol', 'name', 'price', 'change1D', 'value', 'volume', 'foreignNetShares', 'per', 'pbv', 'roe'] as const
 type SortField = typeof columns[number]
+const SortSchema = z.object({ field: z.enum(columns), descending: z.boolean() })
+const ColumnPreferencesSchema = z.object({ screener: z.object({ hidden: z.array(z.enum(columns)), pinned: z.array(z.enum(columns)) }) })
+type ColumnPreferences = z.infer<typeof ColumnPreferencesSchema>['screener']
 
 function csvCell(value: unknown): string {
   const content = value === null || value === undefined ? '' : String(value)
@@ -27,11 +31,25 @@ export function ScreenerPanel({ userId, onSelect }: { userId: string | null; onS
   const [name, setName] = useState('')
   const [message, setMessage] = useState('')
   const [sort, setSort] = useState<{ field: SortField; descending: boolean }>({ field: 'value', descending: true })
-  const [hidden, setHidden] = useState<string[]>([])
-  const [pinned, setPinned] = useState<string[]>(['symbol'])
+  const [columnOverride, setColumnOverride] = useState<ColumnPreferences | null>(null)
   const [selected, setSelected] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   const saved = useQuery({ queryKey: ['saved-screeners', userId], enabled: Boolean(client), queryFn: async () => { const { data, error } = await client!.from('saved_screeners').select('id,name,conditions,sort_config').order('updated_at', { ascending: false }); if (error) throw error; return data ?? [] } })
+  const preferences = useQuery({ queryKey: ['user-preferences', userId], enabled: Boolean(client), queryFn: async () => { const { data, error } = await client!.from('user_preferences').select('columns').eq('user_id', userId!).maybeSingle(); if (error) throw error; return data } })
+  const savedColumns = ColumnPreferencesSchema.safeParse(preferences.data?.columns)
+  const { hidden, pinned } = columnOverride ?? (savedColumns.success ? savedColumns.data.screener : { hidden: [], pinned: ['symbol'] })
+  useEffect(() => {
+    if (!client || !userId || !columnOverride || preferences.isPending) return
+    if (savedColumns.success && JSON.stringify(savedColumns.data.screener) === JSON.stringify(columnOverride)) return
+    const timeout = setTimeout(async () => {
+      const existing = preferences.data?.columns
+      const columnsValue = existing && typeof existing === 'object' && !Array.isArray(existing) ? existing : {}
+      const { error } = await client.from('user_preferences').upsert({ user_id: userId, columns: { ...columnsValue, screener: columnOverride } })
+      if (error) setMessage(error.message)
+      else void queryClient.invalidateQueries({ queryKey: ['user-preferences', userId] })
+    }, 500)
+    return () => clearTimeout(timeout)
+  }, [client, userId, columnOverride, preferences.data, preferences.isPending, savedColumns.success, savedColumns.data, queryClient])
   const result = useQuery({ queryKey: ['screener', applied], queryFn: () => screenerQuery(applied), staleTime: 30_000 })
   const rows = useMemo(() => {
     const data = [...(result.data?.data.rows ?? [])]
@@ -48,6 +66,7 @@ export function ScreenerPanel({ userId, onSelect }: { userId: string | null; onS
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({ count: rows.length, getScrollElement: () => scroller.current, estimateSize: () => 29, overscan: 12 })
   const shownColumns = columns.filter((column) => !hidden.includes(column))
+  function updateColumns(next: ColumnPreferences) { setColumnOverride(next) }
   function update(index: number, patch: Partial<ScreenCondition>) { setDraft((old) => old.map((condition, i) => i === index ? { ...condition, ...patch } : condition)) }
   async function save() {
     if (!client || !userId) { setMessage('Sign in to save screeners.'); return }
@@ -72,13 +91,13 @@ export function ScreenerPanel({ userId, onSelect }: { userId: string | null; onS
         <input aria-label={`Value ${index + 1}`} className="terminal-input w-24" type="number" step="any" value={Number.isNaN(condition.value) ? '' : condition.value} onChange={(event) => update(index, { value: event.target.value === '' ? Number.NaN : Number(event.target.value) })} />
         <button className="terminal-action" aria-label={`Remove condition ${index + 1}`} onClick={() => setDraft(draft.filter((_, i) => i !== index))}>×</button>
       </div>)}
-      <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-[var(--color-iron)] pt-1"><input aria-label="Screener name" className="terminal-input w-44" placeholder="SAVED SCREEN NAME" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /><button className="terminal-action" onClick={save}>SAVE</button><select aria-label="Load saved screener" className="terminal-input max-w-44" value="" onChange={(event) => { const item = saved.data?.find((row) => row.id === event.target.value); const parsed = ScreenConditionSchema.array().safeParse(item?.conditions); if (parsed.success) { setDraft(parsed.data); setApplied(parsed.data); setName(item?.name ?? '') } else setMessage('Saved filters are incompatible.') }}><option value="">LOAD SAVED…</option>{saved.data?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{message && <span role="status" className="text-[var(--warning)]">{message}</span>}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-1 border-t border-[var(--color-iron)] pt-1"><input aria-label="Screener name" className="terminal-input w-44" placeholder="SAVED SCREEN NAME" maxLength={80} value={name} onChange={(event) => setName(event.target.value)} /><button className="terminal-action" onClick={save}>SAVE</button><select aria-label="Load saved screener" className="terminal-input max-w-44" value="" onChange={(event) => { const item = saved.data?.find((row) => row.id === event.target.value); const parsed = ScreenConditionSchema.array().safeParse(item?.conditions); const parsedSort = SortSchema.safeParse(item?.sort_config); if (parsed.success && parsedSort.success) { setDraft(parsed.data); setApplied(parsed.data); setSort(parsedSort.data); setName(item?.name ?? '') } else setMessage('Saved filters are incompatible.') }}><option value="">LOAD SAVED…</option>{saved.data?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{message && <span role="status" className="text-[var(--warning)]">{message}</span>}{preferences.isError && <button className="text-[var(--warning)]" onClick={() => preferences.refetch()}>PREFERENCES LOAD FAILED · RETRY</button>}</div>
       <div className="mt-1 text-[10px] text-[var(--color-ash)]">BROKER NET, BROKER CONCENTRATION, TECHNICAL AND MULTI-PERIOD PERFORMANCE: UNAVAILABLE FROM VERIFIED SOURCE.</div>
     </div>
     <div className="flex items-center gap-2 border-b border-[var(--color-iron)] px-2 py-1"><span>{result.data?.data.total ?? '—'} RESULTS</span><span className="flex-1" /><button className="terminal-action" onClick={exportCsv} disabled={!rows.length}>EXPORT CSV</button><PanelStatus meta={result.data?.meta ?? null} /></div>
     <div ref={scroller} role="grid" aria-label="Screener results" tabIndex={0} className="terminal-scroll min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-ember)]" onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setSelected(Math.min(rows.length - 1, selected + 1)); virtualizer.scrollToIndex(Math.min(rows.length - 1, selected + 1)) } else if (event.key === 'ArrowUp') { event.preventDefault(); setSelected(Math.max(0, selected - 1)); virtualizer.scrollToIndex(Math.max(0, selected - 1)) } else if (event.key === 'Enter' && rows[selected]) onSelect(rows[selected].symbol) }}>
-      {result.isPending ? <PanelMessage state="LOADING" /> : result.isError ? <PanelMessage state="ERROR" detail={result.error.message} retry={() => result.refetch()} /> : !rows.length ? <PanelMessage state="EMPTY" detail="No securities matched the applied conditions." /> : <table className="mono-table w-full table-fixed"><thead><tr>{shownColumns.map((column) => <th key={column} className={pinned.includes(column) ? 'bg-[var(--color-carbon)]' : ''} style={{ width: column === 'name' ? 180 : column === 'symbol' ? 72 : 110 }}><div className="flex items-center gap-1"><button className="truncate" onClick={() => setSort({ field: column, descending: sort.field === column ? !sort.descending : true })}>{labels[column] ?? column.toUpperCase()}{sort.field === column ? sort.descending ? ' ↓' : ' ↑' : ''}</button><button aria-label={`Hide ${column}`} className="muted" onClick={() => setHidden([...hidden, column])}>×</button><button aria-label={`Pin ${column}`} className="muted" onClick={() => setPinned(pinned.includes(column) ? pinned.filter((item) => item !== column) : [...pinned, column])}>{pinned.includes(column) ? '◆' : '◇'}</button></div></th>)}</tr></thead><tbody><tr style={{ height: virtualizer.getVirtualItems()[0]?.start ?? 0 }} aria-hidden="true"><td colSpan={shownColumns.length} className="!p-0" /></tr>{virtualizer.getVirtualItems().map((item) => { const row = rows[item.index]; return <tr key={row.symbol} role="row" aria-selected={selected === item.index} className={`cursor-pointer ${selected === item.index ? 'bg-[var(--color-graphite)]' : ''}`} onClick={() => { setSelected(item.index); onSelect(row.symbol) }}>{shownColumns.map((column) => { const value = row[column]; return <td key={column} className={`${column === 'symbol' ? 'cyan' : ''} ${column === 'change1D' ? marketDirection(typeof value === 'number' ? value : null) : ''} truncate`} title={value == null ? 'Unavailable' : String(value)}>{value == null ? '—' : column === 'change1D' ? formatPercent(value as number) : ['value', 'volume', 'marketCap', 'foreignNetShares'].includes(column) ? formatCompact(value as number) : typeof value === 'number' ? formatNumber(value) : value}</td> })}</tr> })}<tr style={{ height: Math.max(0, virtualizer.getTotalSize() - (virtualizer.getVirtualItems().at(-1)?.end ?? 0)) }} aria-hidden="true"><td colSpan={shownColumns.length} className="!p-0" /></tr></tbody></table>}
+      {result.isPending ? <PanelMessage state="LOADING" /> : result.isError ? <PanelMessage state="ERROR" detail={result.error.message} retry={() => result.refetch()} /> : !rows.length ? <PanelMessage state="EMPTY" detail="No securities matched the applied conditions." /> : <table className="mono-table w-full table-fixed"><thead><tr>{shownColumns.map((column) => <th key={column} className={pinned.includes(column) ? 'bg-[var(--color-carbon)]' : ''} style={{ width: column === 'name' ? 180 : column === 'symbol' ? 72 : 110 }}><div className="flex items-center gap-1"><button className="truncate" onClick={() => setSort({ field: column, descending: sort.field === column ? !sort.descending : true })}>{labels[column] ?? column.toUpperCase()}{sort.field === column ? sort.descending ? ' ↓' : ' ↑' : ''}</button><button aria-label={`Hide ${column}`} className="muted" onClick={() => updateColumns({ hidden: [...hidden, column], pinned })}>×</button><button aria-label={`Pin ${column}`} className="muted" onClick={() => updateColumns({ hidden, pinned: pinned.includes(column) ? pinned.filter((item) => item !== column) : [...pinned, column] })}>{pinned.includes(column) ? '◆' : '◇'}</button></div></th>)}</tr></thead><tbody><tr style={{ height: virtualizer.getVirtualItems()[0]?.start ?? 0 }} aria-hidden="true"><td colSpan={shownColumns.length} className="!p-0" /></tr>{virtualizer.getVirtualItems().map((item) => { const row = rows[item.index]; return <tr key={row.symbol} role="row" aria-selected={selected === item.index} className={`cursor-pointer ${selected === item.index ? 'bg-[var(--color-graphite)]' : ''}`} onClick={() => { setSelected(item.index); onSelect(row.symbol) }}>{shownColumns.map((column) => { const value = row[column]; return <td key={column} className={`${column === 'symbol' ? 'cyan' : ''} ${column === 'change1D' ? marketDirection(typeof value === 'number' ? value : null) : ''} truncate`} title={value == null ? 'Unavailable' : String(value)}>{value == null ? '—' : column === 'change1D' ? formatPercent(value as number) : ['value', 'volume', 'marketCap', 'foreignNetShares'].includes(column) ? formatCompact(value as number) : typeof value === 'number' ? formatNumber(value) : value}</td> })}</tr> })}<tr style={{ height: Math.max(0, virtualizer.getTotalSize() - (virtualizer.getVirtualItems().at(-1)?.end ?? 0)) }} aria-hidden="true"><td colSpan={shownColumns.length} className="!p-0" /></tr></tbody></table>}
     </div>
-    {hidden.length > 0 && <div className="border-t border-[var(--color-iron)] p-1">HIDDEN: {hidden.map((column) => <button key={column} className="terminal-action" onClick={() => setHidden(hidden.filter((item) => item !== column))}>+ {labels[column]}</button>)}</div>}
+    {hidden.length > 0 && <div className="border-t border-[var(--color-iron)] p-1">HIDDEN: {hidden.map((column) => <button key={column} className="terminal-action" onClick={() => updateColumns({ hidden: hidden.filter((item) => item !== column), pinned })}>+ {labels[column]}</button>)}</div>}
   </div>
 }

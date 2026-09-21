@@ -4,9 +4,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createClient } from '@/lib/supabase/client'
 import { PanelMessage } from './panel-status'
 import { formatNumber } from '@/lib/format'
+import type { Tables } from '@/lib/supabase/database.types'
 
-type AlertRow = { id: string; symbol: string; metric: string; operator: string; threshold: number; enabled: boolean; last_triggered_at: string | null }
-type NotificationRow = { id: string; title: string; message: string; created_at: string; read_at: string | null }
+type AlertRow = Pick<Tables<'alerts'>, 'id' | 'symbol' | 'metric' | 'operator' | 'threshold' | 'enabled' | 'last_triggered_at'>
+type NotificationRow = Pick<Tables<'notifications'>, 'id' | 'title' | 'message' | 'created_at' | 'read_at'>
 
 export function AlertsPanel({ userId, symbol }: { userId: string | null; symbol: string | null }) {
   const client = useMemo(() => userId ? createClient() : null, [userId])

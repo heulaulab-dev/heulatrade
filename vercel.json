@@ -1,0 +1,27 @@
+{
+  "services": {
+    "frontend": {
+      "root": ".",
+      "framework": "nextjs"
+    },
+    "market-api": {
+      "root": "services/market-api"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/market-api(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "market-api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 create extension if not exists pgcrypto;
+create schema if not exists private;
 
 create function public.touch_updated_at() returns trigger language plpgsql set search_path = '' as $$
 begin new.updated_at = now(); return new; end; $$;
@@ -76,7 +77,7 @@ create table public.alert_events (
   unique(alert_id, observed_as_of)
 );
 create index alert_events_alert_time on public.alert_events(alert_id, triggered_at desc);
-create function public.notify_alert_event() returns trigger language plpgsql security definer set search_path = '' as $$
+create function private.notify_alert_event() returns trigger language plpgsql security definer set search_path = '' as $$
 declare owner_id uuid; alert_symbol text; alert_metric text;
 begin
   select user_id, symbol, metric into owner_id, alert_symbol, alert_metric from public.alerts where id = new.alert_id;
@@ -88,7 +89,8 @@ begin
     'alert', new.alert_id);
   return new;
 end $$;
-create trigger alert_event_notification after insert on public.alert_events for each row execute function public.notify_alert_event();
+revoke all on function private.notify_alert_event() from public;
+create trigger alert_event_notification after insert on public.alert_events for each row execute function private.notify_alert_event();
 create table public.notifications (
   id uuid primary key default gen_random_uuid(), user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
   type text not null check (type in ('PRICE_ALERT','FOREIGN_FLOW_ALERT','VOLUME_ALERT','SYSTEM')),
@@ -209,6 +211,22 @@ using (exists (select 1 from public.portfolios p where p.id = portfolio_id and p
 with check (exists (select 1 from public.portfolios p where p.id = portfolio_id and p.user_id = (select auth.uid())));
 create policy alert_events_own on public.alert_events for select to authenticated
 using (exists (select 1 from public.alerts p where p.id = alert_id and p.user_id = (select auth.uid())));
+
+-- New Supabase projects no longer expose public tables to the Data API by default.
+-- RLS still decides which rows each authenticated user may access.
+grant usage on schema public to authenticated, service_role;
+grant select, insert, update, delete on public.profiles, public.watchlists, public.watchlist_items,
+  public.workspaces, public.workspace_panels, public.portfolios, public.portfolio_transactions,
+  public.alerts, public.saved_screeners, public.notes, public.user_preferences to authenticated;
+grant select on public.alert_events to authenticated;
+grant select, update on public.notifications to authenticated;
+grant select on public.securities, public.companies, public.company_fundamentals,
+  public.corporate_actions, public.ownership_snapshots, public.market_indices, public.market_snapshots to authenticated;
+grant select, insert, update, delete on public.profiles, public.watchlists, public.watchlist_items,
+  public.workspaces, public.workspace_panels, public.portfolios, public.portfolio_transactions,
+  public.alerts, public.alert_events, public.notifications, public.saved_screeners, public.notes,
+  public.user_preferences, public.securities, public.companies, public.company_fundamentals,
+  public.corporate_actions, public.ownership_snapshots, public.market_indices, public.market_snapshots to service_role;
 
 do $$ declare table_name text; begin
   foreach table_name in array array['securities','companies','company_fundamentals','corporate_actions','ownership_snapshots','market_indices','market_snapshots'] loop

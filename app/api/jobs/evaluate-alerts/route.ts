@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { getStock } from '@/lib/market/server'
 import { observedMetric, triggered, type AlertRule } from '@/lib/alerts/evaluate'
+import type { Database } from '@/lib/supabase/database.types'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !serviceKey || !process.env.MARKET_API_URL) return NextResponse.json({ error: 'NOT_CONFIGURED' }, { status: 503 })
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+  const admin = createClient<Database>(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
   let evaluated = 0, triggeredCount = 0, unavailable = 0, failed = 0
   const bySymbol = new Map<string, Awaited<ReturnType<typeof getStock>> | null>()
   for (let offset = 0; ; offset += 200) {
